@@ -1,0 +1,16 @@
+{
+  "name": "telegram-content-capture-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot that captures content ideas to GitHub",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "octokit": "^3.1.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
