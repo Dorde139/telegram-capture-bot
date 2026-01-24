@@ -19,7 +19,7 @@ const config = {
   telegramToken: process.env.TELEGRAM_BOT_TOKEN,
   githubToken: process.env.GITHUB_TOKEN,
   githubOwner: process.env.GITHUB_OWNER || 'Dorde139',
-  githubRepo: process.env.GITHUB_REPO || 'content-captures',
+  githubRepo: process.env.GITHUB_REPO || 'content-capture',
   githubBranch: process.env.GITHUB_BRANCH || 'main',
   allowedUserId: process.env.TELEGRAM_ALLOWED_USER_ID ? parseInt(process.env.TELEGRAM_ALLOWED_USER_ID) : null,
   contentPath: process.env.CONTENT_PATH || ''  // Root of repo for captures
@@ -126,7 +126,8 @@ source: telegram-capture
  * Commit file to GitHub
  */
 async function commitToGitHub(filename, content, message) {
-  const path = `${config.contentPath}/${filename}`;
+  // Handle empty contentPath (files go to repo root)
+  const path = config.contentPath ? `${config.contentPath}/${filename}` : filename;
 
   try {
     // Create or update file
