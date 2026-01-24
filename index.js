@@ -28,8 +28,8 @@ http.createServer((req, res) => {
 const config = {
   telegramToken: process.env.TELEGRAM_BOT_TOKEN,
   githubToken: process.env.GITHUB_TOKEN,
-  githubOwner: process.env.GITHUB_OWNER || 'Dorde139',
-  githubRepo: process.env.GITHUB_REPO || 'content-capture',
+  githubOwner: process.env.GITHUB_OWNER,
+  githubRepo: process.env.GITHUB_REPO,
   githubBranch: process.env.GITHUB_BRANCH || 'main',
   allowedUserId: process.env.TELEGRAM_ALLOWED_USER_ID ? parseInt(process.env.TELEGRAM_ALLOWED_USER_ID) : null,
   contentPath: process.env.CONTENT_PATH || ''  // Root of repo for captures
