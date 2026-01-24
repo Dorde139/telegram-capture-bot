@@ -1,28 +1,24 @@
 /**
- * Telegram Content Capture Bot
+ * Telegram Content Capture Bot (Webhook Version)
  *
  * Captures content ideas from Telegram messages and commits them to GitHub.
+ * Uses webhooks instead of polling for reliable cloud deployment.
  *
  * Environment variables required:
  * - TELEGRAM_BOT_TOKEN: Your bot token from @BotFather
  * - GITHUB_TOKEN: Personal Access Token with repo scope
  * - GITHUB_OWNER: Your GitHub username
- * - GITHUB_REPO: Repository name (e.g., "ultimate-brain-ai")
+ * - GITHUB_REPO: Repository name
+ * - RENDER_EXTERNAL_URL: (Auto-set by Render) Your service URL
  * - TELEGRAM_ALLOWED_USER_ID: (Optional) Your Telegram user ID to restrict access
  */
 
 const TelegramBot = require('node-telegram-bot-api');
 const { Octokit } = require('octokit');
-const http = require('http');
+const express = require('express');
 
-// Simple health check server for Render
+const app = express();
 const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Telegram Capture Bot is running');
-}).listen(PORT, () => {
-  console.log(`🌐 Health check server on port ${PORT}`);
-});
 
 // Configuration from environment
 const config = {
@@ -32,7 +28,8 @@ const config = {
   githubRepo: process.env.GITHUB_REPO,
   githubBranch: process.env.GITHUB_BRANCH || 'main',
   allowedUserId: process.env.TELEGRAM_ALLOWED_USER_ID ? parseInt(process.env.TELEGRAM_ALLOWED_USER_ID) : null,
-  contentPath: process.env.CONTENT_PATH || ''  // Root of repo for captures
+  contentPath: process.env.CONTENT_PATH || '',
+  webhookUrl: process.env.RENDER_EXTERNAL_URL || process.env.WEBHOOK_URL
 };
 
 // Validate config
@@ -41,26 +38,29 @@ function validateConfig() {
   const missing = required.filter(key => !config[key]);
   if (missing.length > 0) {
     console.error('Missing required environment variables:', missing.join(', '));
-    console.error('\nRequired variables:');
-    console.error('  TELEGRAM_BOT_TOKEN - Get from @BotFather');
-    console.error('  GITHUB_TOKEN - Personal Access Token with repo scope');
-    console.error('  GITHUB_OWNER - Your GitHub username');
-    console.error('  GITHUB_REPO - Repository name');
     process.exit(1);
   }
 }
 
 validateConfig();
 
-// Initialize clients
-const bot = new TelegramBot(config.telegramToken, { polling: true });
+// Initialize bot in webhook mode (no polling)
+const bot = new TelegramBot(config.telegramToken, { webHook: true });
 const octokit = new Octokit({ auth: config.githubToken });
 
-console.log('🤖 Telegram Content Capture Bot started');
-console.log(`📁 Saving to: ${config.githubOwner}/${config.githubRepo}/${config.contentPath}`);
-if (config.allowedUserId) {
-  console.log(`🔒 Restricted to user ID: ${config.allowedUserId}`);
-}
+// Parse JSON bodies
+app.use(express.json());
+
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.send('Telegram Capture Bot is running');
+});
+
+// Webhook endpoint for Telegram
+app.post(`/webhook/${config.telegramToken}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
 
 /**
  * Extract URLs from text
@@ -76,11 +76,11 @@ function extractUrls(text) {
 function generateSlug(text) {
   return text
     .toLowerCase()
-    .replace(/https?:\/\/[^\s]+/g, '') // Remove URLs
-    .replace(/[^a-z0-9\s]/g, '')       // Remove special chars
+    .replace(/https?:\/\/[^\s]+/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
     .trim()
-    .replace(/\s+/g, '-')              // Replace spaces with hyphens
-    .substring(0, 50)                   // Limit length
+    .replace(/\s+/g, '-')
+    .substring(0, 50)
     || 'untitled';
 }
 
@@ -91,7 +91,6 @@ function createContentMarkdown(text, urls) {
   const timestamp = Date.now();
   const now = new Date().toISOString();
 
-  // Clean text (remove URL if it's the only content)
   const cleanText = text.replace(/https?:\/\/[^\s]+/g, '').trim();
   const title = cleanText || (urls.length > 0 ? `Captured from ${new URL(urls[0]).hostname}` : 'Quick capture');
 
@@ -136,11 +135,9 @@ source: telegram-capture
  * Commit file to GitHub
  */
 async function commitToGitHub(filename, content, message) {
-  // Handle empty contentPath (files go to repo root)
   const path = config.contentPath ? `${config.contentPath}/${filename}` : filename;
 
   try {
-    // Create or update file
     await octokit.rest.repos.createOrUpdateFileContents({
       owner: config.githubOwner,
       repo: config.githubRepo,
@@ -165,14 +162,14 @@ bot.on('message', async (msg) => {
   const userId = msg.from.id;
   const text = msg.text || msg.caption || '';
 
-  // Security: Check if user is allowed (if restriction is set)
+  // Security: Check if user is allowed
   if (config.allowedUserId && userId !== config.allowedUserId) {
     console.log(`⚠️ Unauthorized access attempt from user ${userId}`);
     await bot.sendMessage(chatId, '⛔ Unauthorized. This bot is private.');
     return;
   }
 
-  // Ignore commands for now (can extend later)
+  // Handle /start command
   if (text.startsWith('/start')) {
     await bot.sendMessage(chatId,
       '👋 *Content Capture Bot*\n\n' +
@@ -187,7 +184,7 @@ bot.on('message', async (msg) => {
   }
 
   if (text.startsWith('/')) {
-    return; // Ignore other commands
+    return;
   }
 
   if (!text.trim()) {
@@ -203,7 +200,6 @@ bot.on('message', async (msg) => {
   const slug = generateSlug(title);
   const filename = `content-${timestamp}-${slug}.md`;
 
-  // Commit to GitHub
   const result = await commitToGitHub(
     filename,
     content,
@@ -223,13 +219,25 @@ bot.on('message', async (msg) => {
   }
 });
 
-// Error handling
-bot.on('polling_error', (error) => {
-  console.error('Polling error:', error.code);
-});
+// Start server
+app.listen(PORT, async () => {
+  console.log(`🌐 Server running on port ${PORT}`);
+  console.log(`📁 Saving to: ${config.githubOwner}/${config.githubRepo}/${config.contentPath}`);
 
-process.on('SIGINT', () => {
-  console.log('\n👋 Bot shutting down...');
-  bot.stopPolling();
-  process.exit(0);
+  // Set up webhook
+  if (config.webhookUrl) {
+    const webhookPath = `/webhook/${config.telegramToken}`;
+    const fullWebhookUrl = `${config.webhookUrl}${webhookPath}`;
+
+    try {
+      await bot.setWebHook(fullWebhookUrl);
+      console.log(`🔗 Webhook set: ${config.webhookUrl}/webhook/[token]`);
+      console.log('🤖 Telegram Content Capture Bot started (webhook mode)');
+    } catch (error) {
+      console.error('Failed to set webhook:', error.message);
+    }
+  } else {
+    console.log('⚠️ RENDER_EXTERNAL_URL not set - webhook not configured');
+    console.log('   Add RENDER_EXTERNAL_URL or WEBHOOK_URL to environment variables');
+  }
 });
