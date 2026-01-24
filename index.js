@@ -13,6 +13,16 @@
 
 const TelegramBot = require('node-telegram-bot-api');
 const { Octokit } = require('octokit');
+const http = require('http');
+
+// Simple health check server for Render
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Telegram Capture Bot is running');
+}).listen(PORT, () => {
+  console.log(`🌐 Health check server on port ${PORT}`);
+});
 
 // Configuration from environment
 const config = {
